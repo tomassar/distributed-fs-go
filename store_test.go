@@ -2,9 +2,9 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"testing"
-	"time"
 )
 
 func TestPathTransformFunc(t *testing.T) {
@@ -21,58 +21,55 @@ func TestPathTransformFunc(t *testing.T) {
 	}
 }
 
-func TestStoreDeleteKey(t *testing.T) {
-	opts := StoreOpts{
-		PathTransformFunc: CASPathTransformFunc,
-	}
-	s := NewStore(opts)
-	key := "vickyspecials"
-	data := []byte("some jpg bytes")
+func TestStore(t *testing.T) {
+	s := newStore()
+	defer tearDown(t, s)
 
-	err := s.writeStream(key, bytes.NewReader(data))
-	if err != nil {
-		t.Error(err)
+	for i := 0; i < 50; i++ {
+
+		key := fmt.Sprintf("foo_%d", i)
+		data := []byte(fmt.Sprintf("some bytes %d", i))
+
+		err := s.writeStream(key, bytes.NewReader(data))
+		if err != nil {
+			t.Error(err)
+		}
+
+		if ok := s.Has(key); !ok {
+			t.Errorf("expected to have key %s", key)
+		}
+
+		r, err := s.Read(key)
+		if err != nil {
+			t.Error(err)
+		}
+
+		b, _ := io.ReadAll(r)
+
+		if string(b) != string(data) {
+			t.Errorf("want %s have %s", data, b)
+		}
+
+		if err := s.Delete(key); err != nil {
+			t.Error(err)
+		}
+
+		if ok := s.Has(key); ok {
+			t.Errorf("expected to key %s to be deleted", key)
+		}
 	}
 
-	time.Sleep(1 * time.Second)
-	if err := s.Delete(key); err != nil {
-		t.Error(err)
-	}
 }
 
-func TestStore(t *testing.T) {
+func newStore() *Store {
 	opts := StoreOpts{
 		PathTransformFunc: CASPathTransformFunc,
 	}
+	return NewStore(opts)
+}
 
-	s := NewStore(opts)
-	key := "vickyspecials"
-	data := []byte("some jpg bytes")
-
-	err := s.writeStream(key, bytes.NewReader(data))
-	if err != nil {
+func tearDown(t *testing.T, s *Store) {
+	if err := s.Clear(); err != nil {
 		t.Error(err)
 	}
-
-	if ok := s.Has(key); !ok {
-		t.Errorf("expected to have key %s", key)
-	}
-
-	r, err := s.Read(key)
-	if err != nil {
-		t.Error(err)
-	}
-
-	b, _ := io.ReadAll(r)
-
-	if string(b) != string(data) {
-		t.Errorf("want %s have %s", data, b)
-	}
-
-	s.Delete(key)
-
-	if ok := s.Has(key); ok {
-		t.Errorf("expected to key %s to be deleted", key)
-	}
-
 }
