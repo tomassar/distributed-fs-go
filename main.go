@@ -1,34 +1,41 @@
 package main
 
 import (
+	"fmt"
 	"log"
-	"time"
 
 	"github.com/tomassar/distributed-fs-go/p2p"
 )
 
-func main() {
+func makeServer(listenAddr string, nodes ...string) *FileServer {
 	tcpTransportOpts := p2p.TCPTransportOpts{
-		ListenAddr:    ":3000",
+		ListenAddr:    listenAddr,
 		HandshakeFunc: p2p.NOPHandshakeFunc,
 		Decoder:       p2p.DefaultDecoder{},
-		//TODO onpeer
 	}
 	tcpTransport := p2p.NewTCPTransport(tcpTransportOpts)
 
 	fileServerOpts := FileServerOpts{
-		StorageRoot:       "3000_files",
+		StorageRoot:       fmt.Sprintf("%s_network", listenAddr),
 		PathTransformFunc: CASPathTransformFunc,
 		Transport:         tcpTransport,
+		BootstrapNodes:    nodes,
 	}
+
 	s := NewFileServer(fileServerOpts)
 
+	tcpTransport.OnPeer = s.OnPeer
+
+	return s
+}
+
+func main() {
+	s1 := makeServer(":3000", "")
+	s2 := makeServer(":4000", ":3000")
+
 	go func() {
-		time.Sleep(time.Second * 3)
-		s.Stop()
+		log.Fatal(s1.Start())
 	}()
 
-	if err := s.Start(); err != nil {
-		log.Fatal(err)
-	}
+	s2.Start()
 }
