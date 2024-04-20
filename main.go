@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 
@@ -37,5 +38,8 @@ func main() {
 		log.Fatal(s1.Start())
 	}()
 
+	data := bytes.NewReader([]byte("my big data file here!"))
 	s2.Start()
+
+	s2.StoreData("myprivatedata", data)
 }
