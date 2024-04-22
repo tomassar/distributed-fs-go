@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"log"
+	"time"
 
 	"github.com/tomassar/distributed-fs-go/p2p"
 )
@@ -35,11 +35,16 @@ func main() {
 	s2 := makeServer(":4000", ":3000")
 
 	go func() {
-		log.Fatal(s1.Start())
+		s1.Start()
 	}()
+	time.Sleep(1 * time.Second)
 
-	data := bytes.NewReader([]byte("my big data file here!"))
-	s2.Start()
+	go s2.Start()
+	time.Sleep(1 * time.Second)
 
-	s2.StoreData("myprivatedata", data)
+	data := bytes.NewReader([]byte("my big data file heree!"))
+
+	s2.StoreData("myprivatedataa", data)
+
+	select {}
 }
