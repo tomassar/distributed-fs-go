@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/tomassar/distributed-fs-go/p2p"
 )
@@ -58,56 +59,54 @@ type Message struct {
 }
 
 type MessageStoreFile struct {
-	Key string
+	Key  string
+	Size int64
 }
 
 func (s *FileServer) StoreData(key string, r io.Reader) error {
-	buf := new(bytes.Buffer)
+	var (
+		fileBuffer = new(bytes.Buffer)
+		tee        = io.TeeReader(r, fileBuffer)
+	)
+
+	size, err := s.store.Write(key, tee)
+	if err != nil {
+		return err
+	}
+
 	msg := Message{
 		Payload: MessageStoreFile{
-			Key: key,
+			Key:  key,
+			Size: size,
 		},
 	}
 
-	if err := gob.NewEncoder(buf).Encode(msg); err != nil {
+	msgBuf := new(bytes.Buffer)
+	if err := gob.NewEncoder(msgBuf).Encode(msg); err != nil {
 		return err
 	}
 
 	for _, peer := range s.peers {
-		if err := peer.Send(buf.Bytes()); err != nil {
+		if err := peer.Send(msgBuf.Bytes()); err != nil {
 			return err
 		}
 	}
 
-	/* 	time.Sleep(time.Second * 3)
+	time.Sleep(time.Second * 3)
 
-	   	payload := []byte("THIS LARGE FILE")
-	   	for _, peer := range s.peers {
-	   		if err := peer.Send(payload); err != nil {
-	   			return err
-	   		}
-	   	} */
+	for _, peer := range s.peers {
+		n, err := io.Copy(peer, fileBuffer)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println("received and written to disk: ", n)
+		/* 		if err := peer.Send(payload); err != nil {
+			return err
+		} */
+	}
 
 	return nil
-
-	/*
-		 	buf := new(bytes.Buffer)
-			tee := io.TeeReader(r, buf)
-
-			if err := s.store.Write(key, tee); err != nil {
-				return err
-			}
-
-			p := &DataMessage{
-				Key:  key,
-				Data: buf.Bytes(),
-			}
-
-			return s.broadcast(&Message{
-				From:    "todo",
-				Payload: p,
-			})
-	*/
 }
 
 func (s *FileServer) Stop() {
@@ -138,37 +137,59 @@ func (s *FileServer) loop() {
 				log.Println(err)
 			}
 
-			fmt.Printf("payload: %+v\n", msg.Payload)
-
-			peer, ok := s.peers[rpc.From]
-			if !ok {
-				panic("peer not found in peers map")
-			}
-
-			fmt.Println("before calling read inside loop")
-			b := make([]byte, 1000)
-			if _, err := peer.Read(b); err != nil {
-				panic(err)
-			}
-			fmt.Printf("%s\n", string(b))
-			peer.(*p2p.TCPPeer).Wg.Done()
-			/* if err := s.handleMessage(&m); err != nil {
+			if err := s.handleMessage(rpc.From, &msg); err != nil {
 				log.Println(err)
-			} */
+				return
+			}
+
+		/* 	fmt.Printf("payload: %+v\n", msg.Payload)
+
+		peer, ok := s.peers[rpc.From]
+		if !ok {
+			panic("peer not found in peers map")
+		}
+
+		fmt.Println("before calling read inside loop")
+		b := make([]byte, 1000)
+		if _, err := peer.Read(b); err != nil {
+			panic(err)
+		}
+		fmt.Printf("%s\n", string(b))
+		peer.(*p2p.TCPPeer).Wg.Done() */
+		/* if err := s.handleMessage(&m); err != nil {
+			log.Println(err)
+		} */
 		case <-s.quitch:
 			return
 		}
 	}
 }
 
-/* func (s *FileServer) handleMessage(msg *Message) error {
+func (s *FileServer) handleMessage(from string, msg *Message) error {
 	switch v := msg.Payload.(type) {
-	case *DataMessage:
-		fmt.Printf("received data %+v\n", v)
+	case MessageStoreFile:
+		return s.handleMessageStoreFile(from, v)
 	}
 
 	return nil
-} */
+}
+
+func (s *FileServer) handleMessageStoreFile(from string, msg MessageStoreFile) error {
+	peer, ok := s.peers[from]
+	if !ok {
+		return fmt.Errorf("peer (%s) could not be found in the peer list", from)
+	}
+
+	n, err := s.store.Write(msg.Key, io.LimitReader(peer, msg.Size))
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("written %d bytes to disk\n", n)
+	peer.(*p2p.TCPPeer).Wg.Done()
+
+	return nil
+}
 
 func (s *FileServer) bootstrapNetwork() error {
 	for _, addr := range s.BootstrapNodes {
