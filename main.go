@@ -1,9 +1,8 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
-	"io"
-	"log"
 	"time"
 
 	"github.com/tomassar/distributed-fs-go/p2p"
@@ -38,26 +37,29 @@ func main() {
 	go func() {
 		s1.Start()
 	}()
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	go s2.Start()
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
 
-	/* data := bytes.NewReader([]byte("my big data file here!"))
+	for i := 0; i < 10; i++ {
+		data := bytes.NewReader([]byte("my big data file here!"))
+		s2.Store(fmt.Sprintf("myprivatedata_%d", i), data)
 
-	s2.Store("myprivatedataa", data) */
-
-	r, err := s2.Get("myprivatedataa")
-	if err != nil {
-		log.Fatal(err)
+		time.Sleep(5 * time.Millisecond)
 	}
+	/*
+		r, err := s2.Get("myprivatedataa")
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	b, err := io.ReadAll(r)
-	if err != nil {
-		log.Fatal(err)
-	}
+		b, err := io.ReadAll(r)
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	fmt.Println(string(b))
+		fmt.Println(string(b)) */
 
 	select {}
 }
