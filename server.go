@@ -14,6 +14,7 @@ import (
 )
 
 type FileServerOpts struct {
+	EncKey            []byte
 	ListenAddr        string
 	StorageRoot       string
 	PathTransformFunc PathTransformFunc
@@ -109,7 +110,7 @@ func (s *FileServer) Get(key string) (io.Reader, error) {
 		// from the connection, so it will not hang
 		var fileSize int64
 		binary.Read(peer, binary.LittleEndian, &fileSize)
-		n, err := s.store.Write(key, io.LimitReader(peer, fileSize))
+		n, err := s.store.WriteDecrypt(s.EncKey, key, io.LimitReader(peer, fileSize))
 		if err != nil {
 			return nil, err
 		}
@@ -136,7 +137,7 @@ func (s *FileServer) Store(key string, r io.Reader) error {
 	msg := Message{
 		Payload: MessageStoreFile{
 			Key:  key,
-			Size: size,
+			Size: size + 16,
 		},
 	}
 
@@ -149,15 +150,16 @@ func (s *FileServer) Store(key string, r io.Reader) error {
 	//TODO: (@tomassar) use a multiwriter here
 	for _, peer := range s.peers {
 		peer.Send([]byte{p2p.IncomingStream})
-		n, err := io.Copy(peer, fileBuffer)
+		n, err := copyEncrypt(s.EncKey, fileBuffer, peer)
 		if err != nil {
 			return err
 		}
-
-		fmt.Println("received and written to disk: ", n)
-		/* 		if err := peer.Send(payload); err != nil {
+		/* n, err := io.Copy(peer, fileBuffer)
+		if err != nil {
 			return err
 		} */
+
+		fmt.Println("received and written to disk: ", n)
 	}
 
 	return nil
