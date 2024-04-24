@@ -4,3 +4,4 @@
 - Store and hash files locally and remotely
 - Server to handle file storage and broadcast them
 - Gossip protocol
+- Encryption/Decryption
