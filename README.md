@@ -5,3 +5,7 @@
 - Server to handle file storage and broadcast them
 - Gossip protocol
 - Encryption/Decryption
+
+## TODO
+
+- Create a graphical/command line interface to use the file storage system
