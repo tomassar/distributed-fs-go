@@ -147,20 +147,21 @@ func (s *FileServer) Store(key string, r io.Reader) error {
 	}
 
 	time.Sleep(time.Millisecond * 5)
-	//TODO: (@tomassar) use a multiwriter here
-	for _, peer := range s.peers {
-		peer.Send([]byte{p2p.IncomingStream})
-		n, err := copyEncrypt(s.EncKey, fileBuffer, peer)
-		if err != nil {
-			return err
-		}
-		/* n, err := io.Copy(peer, fileBuffer)
-		if err != nil {
-			return err
-		} */
+	peers := []io.Writer{}
 
-		fmt.Println("received and written to disk: ", n)
+	for _, peer := range s.peers {
+		peers = append(peers, peer)
 	}
+
+	mw := io.MultiWriter(peers...)
+	mw.Write([]byte{p2p.IncomingStream})
+
+	n, err := copyEncrypt(s.EncKey, fileBuffer, mw)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("[%s] received and written (%d) to disk: \n", s.Transport.Addr(), n)
 
 	return nil
 }
