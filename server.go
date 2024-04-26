@@ -46,16 +46,6 @@ func NewFileServer(opts FileServerOpts) *FileServer {
 	}
 }
 
-func (s *FileServer) stream(msg *Message) error {
-	peers := []io.Writer{}
-	for _, peer := range s.peers {
-		peers = append(peers, peer)
-	}
-
-	mw := io.MultiWriter(peers...)
-	return gob.NewEncoder(mw).Encode(msg)
-}
-
 func (s *FileServer) broadcast(msg *Message) error {
 	buf := new(bytes.Buffer)
 	if err := gob.NewEncoder(buf).Encode(msg); err != nil {
@@ -95,7 +85,7 @@ func (s *FileServer) Get(key string) (io.Reader, error) {
 	fmt.Printf("[%s] don't have file (%s) locally, fetching from network\n", s.Transport.Addr(), key)
 	msg := Message{
 		Payload: MessageGetFile{
-			Key: key,
+			Key: hashKey(key),
 		},
 	}
 
@@ -136,7 +126,7 @@ func (s *FileServer) Store(key string, r io.Reader) error {
 
 	msg := Message{
 		Payload: MessageStoreFile{
-			Key:  key,
+			Key:  hashKey(key),
 			Size: size + 16,
 		},
 	}
@@ -276,7 +266,7 @@ func (s *FileServer) bootstrapNetwork() error {
 		}
 
 		go func(addr string) {
-			fmt.Println("attempting to connect with remote: ", addr)
+			fmt.Printf("[%s] attempting to connect with remote: %s \n ", s.Transport.Addr(), addr)
 			if err := s.Transport.Dial(addr); err != nil {
 				log.Println("dial error: ", err)
 			}
@@ -287,6 +277,8 @@ func (s *FileServer) bootstrapNetwork() error {
 }
 
 func (s *FileServer) Start() error {
+	fmt.Printf("[%s] starting fileserver... \n", s.Transport.Addr())
+
 	if err := s.Transport.ListenAndAccept(); err != nil {
 		return err
 	}
