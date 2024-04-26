@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"log"
 	"time"
 
@@ -48,16 +47,17 @@ func main() {
 	go s3.Start()
 	time.Sleep(2 * time.Second)
 
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 1; i++ {
 		key := fmt.Sprintf("picture_%d", i)
 		data := bytes.NewReader([]byte("my big data file here!"))
 		s3.Store(key, data)
 
-		if err := s3.store.Delete(s3.ID, key); err != nil {
+		time.Sleep(3 * time.Second)
+		if err := s3.Delete(key); err != nil {
 			log.Fatal(err)
 		}
 
-		r, err := s3.Get(key)
+		/* 	r, err := s3.Get(key)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -67,6 +67,8 @@ func main() {
 			log.Fatal(err)
 		}
 
-		fmt.Println(string(b))
+		fmt.Println(string(b)) */
 	}
+
+	select {}
 }

@@ -132,6 +132,7 @@ func (t *TCPTransport) handleConn(conn net.Conn, outbound bool) {
 
 	if t.OnPeer != nil {
 		if err = t.OnPeer(peer); err != nil {
+			fmt.Printf("[%s] error handling peer: %s", t.ListenAddr, peer.RemoteAddr())
 			return
 		}
 	}

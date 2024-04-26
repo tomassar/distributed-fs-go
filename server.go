@@ -43,6 +43,7 @@ func NewFileServer(opts FileServerOpts) *FileServer {
 
 	if len(opts.ID) == 0 {
 		opts.ID = generateID()
+		fmt.Printf("generated ID: %s\n", opts.ID)
 	}
 
 	return &FileServer{
@@ -82,6 +83,27 @@ type MessageStoreFile struct {
 type MessageGetFile struct {
 	ID  string
 	Key string
+}
+
+type MessageDeleteFile struct {
+	ID  string
+	Key string
+}
+
+func (s *FileServer) Delete(key string) error {
+	err := s.store.Delete(s.ID, key)
+	if err != nil {
+		return err
+	}
+
+	msg := Message{
+		MessageDeleteFile{
+			ID:  s.ID,
+			Key: hashKey(key),
+		},
+	}
+
+	return s.broadcast(&msg)
 }
 
 func (s *FileServer) Get(key string) (io.Reader, error) {
@@ -134,6 +156,7 @@ func (s *FileServer) Store(key string, r io.Reader) error {
 		return err
 	}
 
+	fmt.Println("ID: ", s.ID)
 	msg := Message{
 		Payload: MessageStoreFile{
 			ID:   s.ID,
@@ -176,7 +199,7 @@ func (s *FileServer) OnPeer(p p2p.Peer) error {
 	defer s.peerLock.Unlock()
 	s.peers[p.RemoteAddr().String()] = p
 
-	log.Printf("connected with remote %s", p.RemoteAddr())
+	log.Printf("[%s] connected with remote %s", s.Transport.Addr(), p.RemoteAddr())
 
 	return nil
 }
@@ -211,6 +234,8 @@ func (s *FileServer) handleMessage(from string, msg *Message) error {
 		return s.handleMessageStoreFile(from, v)
 	case MessageGetFile:
 		return s.handleMessageGetFile(from, v)
+	case MessageDeleteFile:
+		return s.handleMessageDeleteFile(from, v)
 	}
 
 	return nil
@@ -270,6 +295,11 @@ func (s *FileServer) handleMessageStoreFile(from string, msg MessageStoreFile) e
 	return nil
 }
 
+func (s *FileServer) handleMessageDeleteFile(from string, msg MessageDeleteFile) error {
+	fmt.Printf("[%s] received message from %s, deleting file: %s\n", s.Transport.Addr(), from, msg.Key)
+	return s.store.Delete(msg.ID, msg.Key)
+}
+
 func (s *FileServer) bootstrapNetwork() error {
 	for _, addr := range s.BootstrapNodes {
 		if len(addr) == 0 {
@@ -303,4 +333,5 @@ func (s *FileServer) Start() error {
 func init() {
 	gob.Register(MessageStoreFile{})
 	gob.Register(MessageGetFile{})
+	gob.Register(MessageDeleteFile{})
 }
