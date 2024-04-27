@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/gob"
 	"fmt"
@@ -94,7 +95,7 @@ type MessageGetMyFiles struct {
 	ID string
 }
 
-func (s *FileServer) Sync() error {
+func (s *FileServer) Sync(ctx context.Context) error {
 	msg := Message{
 		Payload: MessageGetMyFiles{
 			ID: s.ID,
@@ -106,6 +107,7 @@ func (s *FileServer) Sync() error {
 		return err
 	}
 
+	ctx = context.WithValue(ctx, useHashedKeysKey{}, true)
 	for _, peer := range s.peers {
 		/* 	var incomingStream byte
 		if err := binary.Read(peer, binary.LittleEndian, &incomingStream); err != nil {
@@ -136,7 +138,7 @@ func (s *FileServer) Sync() error {
 			}
 			fileKey := string(keyBytes)
 
-			if ok := s.store.Has(s.ID, fileKey); !ok {
+			if ok := s.store.Has(ctx, s.ID, fileKey); !ok {
 				// Read the file size
 				var fileSize int64
 				if err := binary.Read(peer, binary.LittleEndian, &fileSize); err != nil {
@@ -144,7 +146,7 @@ func (s *FileServer) Sync() error {
 				}
 
 				// Read the file content
-				n, err := s.store.WriteDecrypt(s.EncKey, s.ID, fileKey, io.LimitReader(peer, fileSize))
+				n, err := s.store.WriteDecrypt(ctx, s.EncKey, s.ID, fileKey, io.LimitReader(peer, fileSize))
 				if err != nil {
 					return err
 				}
@@ -157,8 +159,8 @@ func (s *FileServer) Sync() error {
 	return nil
 }
 
-func (s *FileServer) Delete(key string) error {
-	err := s.store.Delete(s.ID, key)
+func (s *FileServer) Delete(ctx context.Context, key string) error {
+	err := s.store.Delete(ctx, s.ID, key)
 	if err != nil {
 		return err
 	}
@@ -173,10 +175,10 @@ func (s *FileServer) Delete(key string) error {
 	return s.broadcast(&msg)
 }
 
-func (s *FileServer) Get(key string) (io.Reader, error) {
-	if s.store.Has(s.ID, key) {
+func (s *FileServer) Get(ctx context.Context, key string) (io.Reader, error) {
+	if s.store.Has(ctx, s.ID, key) {
 		fmt.Printf("[%s] serving file (%s) from local disk\n", s.Transport.Addr(), key)
-		_, r, err := s.store.Read(s.ID, key)
+		_, r, err := s.store.Read(ctx, s.ID, key)
 		return r, err
 	}
 
@@ -199,7 +201,7 @@ func (s *FileServer) Get(key string) (io.Reader, error) {
 		// from the connection, so it will not hang
 		var fileSize int64
 		binary.Read(peer, binary.LittleEndian, &fileSize)
-		n, err := s.store.WriteDecrypt(s.EncKey, s.ID, key, io.LimitReader(peer, fileSize))
+		n, err := s.store.WriteDecrypt(ctx, s.EncKey, s.ID, key, io.LimitReader(peer, fileSize))
 		if err != nil {
 			return nil, err
 		}
@@ -208,17 +210,17 @@ func (s *FileServer) Get(key string) (io.Reader, error) {
 		peer.CloseStream()
 	}
 
-	_, r, err := s.store.Read(s.ID, key)
+	_, r, err := s.store.Read(ctx, s.ID, key)
 	return r, err
 }
 
-func (s *FileServer) Store(key string, r io.Reader) error {
+func (s *FileServer) Store(ctx context.Context, key string, r io.Reader) error {
 	var (
 		fileBuffer = new(bytes.Buffer)
 		tee        = io.TeeReader(r, fileBuffer)
 	)
 
-	size, err := s.store.Write(s.ID, key, tee)
+	size, err := s.store.Write(ctx, s.ID, key, tee)
 	if err != nil {
 		return err
 	}
@@ -277,6 +279,8 @@ func (s *FileServer) loop() {
 		s.Transport.Close()
 	}()
 
+	ctx := context.Background()
+
 	for {
 		select {
 		case rpc := <-s.Transport.Consume():
@@ -285,7 +289,7 @@ func (s *FileServer) loop() {
 				log.Println("decoding error: ", err)
 			}
 
-			if err := s.handleMessage(rpc.From, &msg); err != nil {
+			if err := s.handleMessage(ctx, rpc.From, &msg); err != nil {
 				log.Println("handle message error: ", err)
 			}
 
@@ -295,23 +299,23 @@ func (s *FileServer) loop() {
 	}
 }
 
-func (s *FileServer) handleMessage(from string, msg *Message) error {
+func (s *FileServer) handleMessage(ctx context.Context, from string, msg *Message) error {
 	switch v := msg.Payload.(type) {
 	case MessageStoreFile:
-		return s.handleMessageStoreFile(from, v)
+		return s.handleMessageStoreFile(ctx, from, v)
 	case MessageGetFile:
-		return s.handleMessageGetFile(from, v)
+		return s.handleMessageGetFile(ctx, from, v)
 	case MessageDeleteFile:
-		return s.handleMessageDeleteFile(from, v)
+		return s.handleMessageDeleteFile(ctx, from, v)
 	case MessageGetMyFiles:
-		return s.handleMessageGetMyFiles(from, v)
+		return s.handleMessageGetMyFiles(ctx, from, v)
 	}
 
 	return nil
 }
 
-func (s *FileServer) handleMessageGetMyFiles(from string, msg MessageGetMyFiles) error {
-	files, err := s.store.readFilesGivenID(msg.ID)
+func (s *FileServer) handleMessageGetMyFiles(ctx context.Context, from string, msg MessageGetMyFiles) error {
+	files, err := s.store.readFilesGivenID(ctx, msg.ID)
 	if err != nil {
 		return err
 	}
@@ -320,32 +324,33 @@ func (s *FileServer) handleMessageGetMyFiles(from string, msg MessageGetMyFiles)
 	var buf bytes.Buffer
 
 	// Iterate over each file and write it to the buffer
+	ctx = context.WithValue(ctx, useHashedKeysKey{}, true)
 	for _, file := range files {
-		fileSize, r, err := s.store.ReadWithHashedKey(msg.ID, file.Filename)
+		fileSize, r, err := s.store.Read(ctx, msg.ID, file.Filename)
 		if err != nil {
-			log.Printf("Error reading file %s: %v", file.Filename, err)
+			log.Printf("Error reading file %s: %v\n", file.Filename, err)
 			continue
 		}
 
 		// Write the file key to the buffer
 		if err := binary.Write(&buf, binary.LittleEndian, uint32(len(file.Filename))); err != nil {
-			log.Printf("Error writing file key length to buffer: %v", err)
+			log.Printf("Error writing file key length to buffer: %v\n", err)
 			continue
 		}
 		if _, err := buf.WriteString(file.Filename); err != nil {
-			log.Printf("Error writing file key to buffer: %v", err)
+			log.Printf("Error writing file key to buffer: %v\n", err)
 			continue
 		}
 
 		// Write the file size to the buffer
 		if err := binary.Write(&buf, binary.LittleEndian, fileSize); err != nil {
-			log.Printf("Error writing file size to buffer: %v", err)
+			log.Printf("Error writing file size to buffer: %v\n", err)
 			continue
 		}
 
 		// Write the file content to the buffer
 		if _, err := io.Copy(&buf, r); err != nil {
-			log.Printf("Error writing file content to buffer: %v", err)
+			log.Printf("Error writing file content to buffer: %v\n", err)
 			continue
 		}
 	}
@@ -353,7 +358,7 @@ func (s *FileServer) handleMessageGetMyFiles(from string, msg MessageGetMyFiles)
 	// Send the buffer to the requesting peer
 	peer, ok := s.peers[from]
 	if !ok {
-		log.Printf("Peer %s not found", from)
+		log.Printf("Peer %s not found\n", from)
 		return fmt.Errorf("peer %s not found", from)
 	}
 
@@ -363,23 +368,23 @@ func (s *FileServer) handleMessageGetMyFiles(from string, msg MessageGetMyFiles)
 	// Then send the aggregated files
 	err = peer.Send(buf.Bytes())
 	if err != nil {
-		log.Printf("Error sending files to peer %s: %v", from, err)
+		log.Printf("Error sending files to peer %s: %v\n", from, err)
 		return err
 	}
 
-	log.Printf("Sent files to peer %s", from)
+	log.Printf("Sent files to peer %s\n", from)
 
 	return nil
 }
 
-func (s *FileServer) handleMessageGetFile(from string, msg MessageGetFile) error {
-	if !s.store.Has(msg.ID, msg.Key) {
+func (s *FileServer) handleMessageGetFile(ctx context.Context, from string, msg MessageGetFile) error {
+	if !s.store.Has(ctx, msg.ID, msg.Key) {
 		return fmt.Errorf("[%s] need to serve file (%s) but not found on disk", s.Transport.Addr(), msg.Key)
 	}
 
 	fmt.Printf("[%s] serving file (%s) over the network\n", s.Transport.Addr(), msg.Key)
 
-	fileSize, r, err := s.store.Read(msg.ID, msg.Key)
+	fileSize, r, err := s.store.Read(ctx, msg.ID, msg.Key)
 	if err != nil {
 		return err
 	}
@@ -409,13 +414,13 @@ func (s *FileServer) handleMessageGetFile(from string, msg MessageGetFile) error
 	return nil
 }
 
-func (s *FileServer) handleMessageStoreFile(from string, msg MessageStoreFile) error {
+func (s *FileServer) handleMessageStoreFile(ctx context.Context, from string, msg MessageStoreFile) error {
 	peer, ok := s.peers[from]
 	if !ok {
 		return fmt.Errorf("peer (%s) could not be found in the peer list", from)
 	}
 
-	n, err := s.store.Write(msg.ID, msg.Key, io.LimitReader(peer, msg.Size))
+	n, err := s.store.Write(ctx, msg.ID, msg.Key, io.LimitReader(peer, msg.Size))
 	if err != nil {
 		return err
 	}
@@ -426,9 +431,9 @@ func (s *FileServer) handleMessageStoreFile(from string, msg MessageStoreFile) e
 	return nil
 }
 
-func (s *FileServer) handleMessageDeleteFile(from string, msg MessageDeleteFile) error {
+func (s *FileServer) handleMessageDeleteFile(ctx context.Context, from string, msg MessageDeleteFile) error {
 	fmt.Printf("[%s] received message from %s, deleting file: %s\n", s.Transport.Addr(), from, msg.Key)
-	return s.store.Delete(msg.ID, msg.Key)
+	return s.store.Delete(ctx, msg.ID, msg.Key)
 }
 
 func (s *FileServer) bootstrapNetwork() error {

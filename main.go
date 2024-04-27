@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"time"
@@ -49,7 +50,8 @@ func main() {
 	go s3.Start()
 	time.Sleep(2 * time.Second)
 
-	err := s3.Sync()
+	ctx := context.Background()
+	err := s3.Sync(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}

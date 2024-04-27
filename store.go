@@ -27,11 +27,7 @@ type useHashedKeysKey struct{}
 func (s *Store) getPathTransformFunc(ctx context.Context) PathTransformFunc {
 	useHashedKeys, ok := ctx.Value(useHashedKeysKey{}).(bool)
 	if ok && useHashedKeys {
-		return func(key string) PathKey {
-			hash := sha1.Sum([]byte(key))
-			hashStr := hex.EncodeToString(hash[:])
-			return getPathFromHashedKey(hashStr)
-		}
+		return getPathFromHashedKey
 	}
 
 	return s.PathTransformFunc
@@ -138,7 +134,7 @@ func (s *Store) readFilesGivenID(ctx context.Context, id string) ([]PathKey, err
 }
 
 func (s *Store) Has(ctx context.Context, id, key string) bool {
-	pathKey := s.PathTransformFunc(key)
+	pathKey := s.getPathTransformFunc(ctx)(key)
 
 	fullPathWithRoot := fmt.Sprintf("%s/%s/%s", s.Root, id, pathKey.FullPath())
 	_, err := os.Stat(fullPathWithRoot)
@@ -150,8 +146,8 @@ func (s *Store) Clear() error {
 	return os.RemoveAll(s.Root)
 }
 
-func (s *Store) Delete(id, key string) error {
-	pathKey := s.PathTransformFunc(key)
+func (s *Store) Delete(ctx context.Context, id, key string) error {
+	pathKey := s.getPathTransformFunc(ctx)(key)
 
 	defer func() {
 		log.Printf("deleted [%s] from disk", pathKey.Filename)
@@ -162,11 +158,11 @@ func (s *Store) Delete(id, key string) error {
 }
 
 func (s *Store) Write(ctx context.Context, id, key string, r io.Reader) (int64, error) {
-	return s.writeStream(id, key, r)
+	return s.writeStream(ctx, id, key, r)
 }
 
 func (s *Store) WriteDecrypt(ctx context.Context, encKey []byte, id, key string, r io.Reader) (int64, error) {
-	f, err := s.openFileForWriting(id, key)
+	f, err := s.openFileForWriting(ctx, id, key)
 	if err != nil {
 		return 0, err
 	}
@@ -176,7 +172,7 @@ func (s *Store) WriteDecrypt(ctx context.Context, encKey []byte, id, key string,
 }
 
 func (s *Store) openFileForWriting(ctx context.Context, id, key string) (*os.File, error) {
-	pathKey := s.PathTransformFunc(key)
+	pathKey := s.getPathTransformFunc(ctx)(key)
 	pathNameWithRoot := fmt.Sprintf("%s/%s/%s", s.Root, id, pathKey.PathName)
 	if err := os.MkdirAll(pathNameWithRoot, os.ModePerm); err != nil {
 		return nil, err
@@ -188,7 +184,7 @@ func (s *Store) openFileForWriting(ctx context.Context, id, key string) (*os.Fil
 }
 
 func (s *Store) writeStream(ctx context.Context, id, key string, r io.Reader) (int64, error) {
-	f, err := s.openFileForWriting(id, key)
+	f, err := s.openFileForWriting(ctx, id, key)
 	if err != nil {
 		return 0, err
 	}
@@ -196,11 +192,11 @@ func (s *Store) writeStream(ctx context.Context, id, key string, r io.Reader) (i
 }
 
 func (s *Store) Read(ctx context.Context, id, key string) (int64, io.Reader, error) {
-	return s.readStream(id, key)
+	return s.readStream(ctx, id, key)
 }
 
 func (s *Store) readStream(ctx context.Context, id, key string) (int64, io.ReadCloser, error) {
-	pathKey := s.PathTransformFunc(key)
+	pathKey := s.getPathTransformFunc(ctx)(key)
 	fullPathWithRoot := fmt.Sprintf("%s/%s/%s", s.Root, id, pathKey.FullPath())
 
 	file, err := os.Open(fullPathWithRoot)
