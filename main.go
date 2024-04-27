@@ -1,9 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/tomassar/distributed-fs-go/p2p"
@@ -51,28 +51,35 @@ func main() {
 	time.Sleep(2 * time.Second)
 
 	ctx := context.Background()
-	err := s3.Sync(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
 
-	/* for i := 0; i < 3; i++ {
+	for i := 0; i < 3; i++ {
 		key := fmt.Sprintf("music_%d", i)
 		data := bytes.NewReader([]byte("my big data file here!"))
-		s3.Store(key, data)
+		s3.Store(ctx, key, data)
 
-			r, err := s3.Get(key)
-		if err != nil {
+		time.Sleep(6 * time.Second)
+		/* if err := s3.store.Delete(ctx, s3.ID, key); err != nil {
 			log.Fatal(err)
 		}
+		time.Sleep(100 * time.Millisecond) */
+		/* 		r, err := s3.Get(ctx, key)
+		   		if err != nil {
+		   			log.Fatal(err)
+		   		}
 
-		b, err := io.ReadAll(r)
-		if err != nil {
-			log.Fatal(err)
-		}
+		   		b, err := io.ReadAll(r)
+		   		if err != nil {
+		   			log.Fatal(err)
+		   		}
 
-		fmt.Println(string(b))
-	} */
+		   		fmt.Println(string(b)) */
+	}
+
+	/* 	time.Sleep(10 * time.Second)
+	   	err := s3.Sync(ctx)
+	   	if err != nil {
+	   		log.Fatal(err)
+	   	} */
 
 	/* 	time.Sleep(10 * time.Second)
 

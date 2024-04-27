@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"testing"
@@ -24,6 +25,7 @@ func TestPathTransformFunc(t *testing.T) {
 func TestStore(t *testing.T) {
 	s := newStore()
 	id := generateID()
+	ctx := context.Background()
 	defer tearDown(t, s)
 
 	for i := 0; i < 50; i++ {
@@ -31,16 +33,16 @@ func TestStore(t *testing.T) {
 		key := fmt.Sprintf("foo_%d", i)
 		data := []byte(fmt.Sprintf("some bytes %d", i))
 
-		_, err := s.writeStream(id, key, bytes.NewReader(data))
+		_, err := s.writeStream(ctx, id, key, bytes.NewReader(data))
 		if err != nil {
 			t.Error(err)
 		}
 
-		if ok := s.Has(id, key); !ok {
+		if ok := s.Has(ctx, id, key); !ok {
 			t.Errorf("expected to have key %s", key)
 		}
 
-		_, r, err := s.Read(id, key)
+		_, r, err := s.Read(ctx, id, key)
 		if err != nil {
 			t.Error(err)
 		}
@@ -51,11 +53,11 @@ func TestStore(t *testing.T) {
 			t.Errorf("want %s have %s", data, b)
 		}
 
-		if err := s.Delete(id, key); err != nil {
+		if err := s.Delete(ctx, id, key); err != nil {
 			t.Error(err)
 		}
 
-		if ok := s.Has(id, key); ok {
+		if ok := s.Has(ctx, id, key); ok {
 			t.Errorf("expected to key %s to be deleted", key)
 		}
 	}
