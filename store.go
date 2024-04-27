@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha1"
 	"encoding/hex"
 	"errors"
@@ -18,23 +19,25 @@ func CASPathTransformFunc(key string) PathKey {
 	hash := sha1.Sum([]byte(key))
 	hashStr := hex.EncodeToString(hash[:])
 
-	blockSize := 5
-	sliceLen := len(hashStr) / blockSize
-
-	paths := make([]string, sliceLen)
-
-	for i := 0; i < sliceLen; i++ {
-		from, to := i*blockSize, (i*blockSize)+blockSize
-		paths[i] = hashStr[from:to]
-	}
-
-	return PathKey{
-		PathName: strings.Join(paths, "/"),
-		Filename: hashStr,
-	}
+	return getPathFromHashedKey(hashStr)
 }
 
-func AlreadyHashedKeyPathTransformFunc(hashStr string) PathKey {
+type useHashedKeysKey struct{}
+
+func (s *Store) getPathTransformFunc(ctx context.Context) PathTransformFunc {
+	useHashedKeys, ok := ctx.Value(useHashedKeysKey{}).(bool)
+	if ok && useHashedKeys {
+		return func(key string) PathKey {
+			hash := sha1.Sum([]byte(key))
+			hashStr := hex.EncodeToString(hash[:])
+			return getPathFromHashedKey(hashStr)
+		}
+	}
+
+	return s.PathTransformFunc
+}
+
+func getPathFromHashedKey(hashStr string) PathKey {
 	blockSize := 5
 	sliceLen := len(hashStr) / blockSize
 
@@ -102,7 +105,7 @@ func NewStore(opts StoreOpts) *Store {
 	}
 }
 
-func (s *Store) readFilesGivenID(id string) ([]PathKey, error) {
+func (s *Store) readFilesGivenID(ctx context.Context, id string) ([]PathKey, error) {
 	var files []PathKey
 	root := filepath.Join(s.Root, id)
 
@@ -134,7 +137,7 @@ func (s *Store) readFilesGivenID(id string) ([]PathKey, error) {
 	return files, nil
 }
 
-func (s *Store) Has(id, key string) bool {
+func (s *Store) Has(ctx context.Context, id, key string) bool {
 	pathKey := s.PathTransformFunc(key)
 
 	fullPathWithRoot := fmt.Sprintf("%s/%s/%s", s.Root, id, pathKey.FullPath())
@@ -158,11 +161,11 @@ func (s *Store) Delete(id, key string) error {
 	return os.RemoveAll(firstPathNameWithRoot)
 }
 
-func (s *Store) Write(id, key string, r io.Reader) (int64, error) {
+func (s *Store) Write(ctx context.Context, id, key string, r io.Reader) (int64, error) {
 	return s.writeStream(id, key, r)
 }
 
-func (s *Store) WriteDecrypt(encKey []byte, id, key string, r io.Reader) (int64, error) {
+func (s *Store) WriteDecrypt(ctx context.Context, encKey []byte, id, key string, r io.Reader) (int64, error) {
 	f, err := s.openFileForWriting(id, key)
 	if err != nil {
 		return 0, err
@@ -172,7 +175,7 @@ func (s *Store) WriteDecrypt(encKey []byte, id, key string, r io.Reader) (int64,
 	return int64(n), err
 }
 
-func (s *Store) openFileForWriting(id, key string) (*os.File, error) {
+func (s *Store) openFileForWriting(ctx context.Context, id, key string) (*os.File, error) {
 	pathKey := s.PathTransformFunc(key)
 	pathNameWithRoot := fmt.Sprintf("%s/%s/%s", s.Root, id, pathKey.PathName)
 	if err := os.MkdirAll(pathNameWithRoot, os.ModePerm); err != nil {
@@ -184,7 +187,7 @@ func (s *Store) openFileForWriting(id, key string) (*os.File, error) {
 	return os.Create(fullPathWithRoot)
 }
 
-func (s *Store) writeStream(id, key string, r io.Reader) (int64, error) {
+func (s *Store) writeStream(ctx context.Context, id, key string, r io.Reader) (int64, error) {
 	f, err := s.openFileForWriting(id, key)
 	if err != nil {
 		return 0, err
@@ -192,30 +195,12 @@ func (s *Store) writeStream(id, key string, r io.Reader) (int64, error) {
 	return io.Copy(f, r)
 }
 
-func (s *Store) Read(id, key string) (int64, io.Reader, error) {
+func (s *Store) Read(ctx context.Context, id, key string) (int64, io.Reader, error) {
 	return s.readStream(id, key)
 }
 
-func (s *Store) readStream(id, key string) (int64, io.ReadCloser, error) {
+func (s *Store) readStream(ctx context.Context, id, key string) (int64, io.ReadCloser, error) {
 	pathKey := s.PathTransformFunc(key)
-	fullPathWithRoot := fmt.Sprintf("%s/%s/%s", s.Root, id, pathKey.FullPath())
-
-	file, err := os.Open(fullPathWithRoot)
-	if err != nil {
-		return 0, nil, err
-	}
-
-	fi, err := os.Stat(fullPathWithRoot)
-	if err != nil {
-		return 0, nil, err
-	}
-
-	return fi.Size(), file, nil
-}
-
-func (s *Store) ReadWithHashedKey(id, hashedKey string) (int64, io.ReadCloser, error) {
-	pathKey := AlreadyHashedKeyPathTransformFunc(hashedKey)
-	// Directly use the hashed key to construct the path
 	fullPathWithRoot := fmt.Sprintf("%s/%s/%s", s.Root, id, pathKey.FullPath())
 
 	file, err := os.Open(fullPathWithRoot)

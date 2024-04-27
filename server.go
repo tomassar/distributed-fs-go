@@ -127,6 +127,8 @@ func (s *FileServer) Sync() error {
 				return fmt.Errorf("failed to read file key length: %v", err)
 			}
 
+			fmt.Println("key length: ", keyLength)
+
 			// Read the file key
 			keyBytes := make([]byte, keyLength)
 			if _, err := io.ReadFull(peer, keyBytes); err != nil {
