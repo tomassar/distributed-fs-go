@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -17,6 +18,23 @@ func CASPathTransformFunc(key string) PathKey {
 	hash := sha1.Sum([]byte(key))
 	hashStr := hex.EncodeToString(hash[:])
 
+	blockSize := 5
+	sliceLen := len(hashStr) / blockSize
+
+	paths := make([]string, sliceLen)
+
+	for i := 0; i < sliceLen; i++ {
+		from, to := i*blockSize, (i*blockSize)+blockSize
+		paths[i] = hashStr[from:to]
+	}
+
+	return PathKey{
+		PathName: strings.Join(paths, "/"),
+		Filename: hashStr,
+	}
+}
+
+func AlreadyHashedKeyPathTransformFunc(hashStr string) PathKey {
 	blockSize := 5
 	sliceLen := len(hashStr) / blockSize
 
@@ -84,6 +102,38 @@ func NewStore(opts StoreOpts) *Store {
 	}
 }
 
+func (s *Store) readFilesGivenID(id string) ([]PathKey, error) {
+	var files []PathKey
+	root := filepath.Join(s.Root, id)
+
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			// Assuming the path is relative to the root directory
+			relativePath := strings.TrimPrefix(path, root)
+			relativePath = strings.TrimPrefix(relativePath, "/")
+
+			// Split the path to get the filename
+			paths := strings.Split(relativePath, "/")
+			filename := paths[len(paths)-1]
+
+			files = append(files, PathKey{
+				PathName: relativePath,
+				Filename: filename,
+			})
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return files, nil
+}
+
 func (s *Store) Has(id, key string) bool {
 	pathKey := s.PathTransformFunc(key)
 
@@ -148,6 +198,24 @@ func (s *Store) Read(id, key string) (int64, io.Reader, error) {
 
 func (s *Store) readStream(id, key string) (int64, io.ReadCloser, error) {
 	pathKey := s.PathTransformFunc(key)
+	fullPathWithRoot := fmt.Sprintf("%s/%s/%s", s.Root, id, pathKey.FullPath())
+
+	file, err := os.Open(fullPathWithRoot)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	fi, err := os.Stat(fullPathWithRoot)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	return fi.Size(), file, nil
+}
+
+func (s *Store) ReadWithHashedKey(id, hashedKey string) (int64, io.ReadCloser, error) {
+	pathKey := AlreadyHashedKeyPathTransformFunc(hashedKey)
+	// Directly use the hashed key to construct the path
 	fullPathWithRoot := fmt.Sprintf("%s/%s/%s", s.Root, id, pathKey.FullPath())
 
 	file, err := os.Open(fullPathWithRoot)
