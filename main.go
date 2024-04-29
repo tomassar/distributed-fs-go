@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/tomassar/distributed-fs-go/p2p"
@@ -57,11 +58,14 @@ func main() {
 		data := bytes.NewReader([]byte("my big data file here!"))
 		s3.Store(ctx, key, data)
 
-		time.Sleep(6 * time.Second)
-		/* if err := s3.store.Delete(ctx, s3.ID, key); err != nil {
+		if i%2 != 0 {
+			continue
+		}
+		time.Sleep(10 * time.Millisecond)
+		if err := s3.store.Delete(ctx, s3.ID, key); err != nil {
 			log.Fatal(err)
 		}
-		time.Sleep(100 * time.Millisecond) */
+		time.Sleep(100 * time.Millisecond)
 		/* 		r, err := s3.Get(ctx, key)
 		   		if err != nil {
 		   			log.Fatal(err)
@@ -75,11 +79,11 @@ func main() {
 		   		fmt.Println(string(b)) */
 	}
 
-	/* 	time.Sleep(10 * time.Second)
-	   	err := s3.Sync(ctx)
-	   	if err != nil {
-	   		log.Fatal(err)
-	   	} */
+	time.Sleep(4 * time.Second)
+	err := s3.Sync(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	/* 	time.Sleep(10 * time.Second)
 

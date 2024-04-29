@@ -27,7 +27,6 @@ type useHashedKeysKey struct{}
 func (s *Store) getPathTransformFunc(ctx context.Context) PathTransformFunc {
 	useHashedKeys, ok := ctx.Value(useHashedKeysKey{}).(bool)
 	if ok && useHashedKeys {
-		fmt.Printf("USING HASHED KEY\n")
 		return getPathFromHashedKey
 	}
 

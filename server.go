@@ -109,51 +109,41 @@ func (s *FileServer) Sync(ctx context.Context) error {
 
 	ctx = context.WithValue(ctx, useHashedKeysKey{}, true)
 	for _, peer := range s.peers {
-		/* 	var incomingStream byte
-		if err := binary.Read(peer, binary.LittleEndian, &incomingStream); err != nil {
-			return fmt.Errorf("failed to read incoming stream byte: %v", err)
-		}
-
-		if incomingStream != p2p.IncomingStream {
-			return fmt.Errorf("expected incoming stream byte, got %v", incomingStream)
-		}
-		*/
-		// Loop to receive multiple files
 		for {
-			// Read the file key length
 			var keyLength uint32
 			if err := binary.Read(peer, binary.LittleEndian, &keyLength); err != nil {
 				if err == io.EOF {
-					break // No more files to receive
+					break
 				}
 				return fmt.Errorf("failed to read file key length: %v", err)
 			}
 
 			fmt.Println("key length: ", keyLength)
 
-			// Read the file key
 			keyBytes := make([]byte, keyLength)
 			if _, err := io.ReadFull(peer, keyBytes); err != nil {
 				return fmt.Errorf("failed to read file key: %v", err)
 			}
 			fileKey := string(keyBytes)
+			fmt.Println("key: ", fileKey)
+			var fileSize int64
+			if err := binary.Read(peer, binary.LittleEndian, &fileSize); err != nil {
+				return fmt.Errorf("failed to read file size: %v", err)
+			}
 
 			if ok := s.store.Has(ctx, s.ID, fileKey); !ok {
-				// Read the file size
-				var fileSize int64
-				if err := binary.Read(peer, binary.LittleEndian, &fileSize); err != nil {
-					return fmt.Errorf("failed to read file size: %v", err)
-				}
-
-				// Read the file content
 				n, err := s.store.WriteDecrypt(ctx, s.EncKey, s.ID, fileKey, io.LimitReader(peer, fileSize))
 				if err != nil {
 					return err
 				}
 				fmt.Printf("[%s] received (%d) bytes over the network from (%s)\n", s.Transport.Addr(), n, peer.RemoteAddr())
+			} else {
+				discard := make([]byte, fileSize)
+				if _, err := io.ReadFull(peer, discard); err != nil {
+					return fmt.Errorf("failed to discard bytes: %v", err)
+				}
 			}
 		}
-
 		peer.CloseStream()
 	}
 	return nil
@@ -225,11 +215,10 @@ func (s *FileServer) Store(ctx context.Context, key string, r io.Reader) error {
 		return err
 	}
 
-	fmt.Println("ID: ", s.ID)
 	msg := Message{
 		Payload: MessageStoreFile{
 			ID:   s.ID,
-			Key:  hashKey(key),
+			Key:  key,
 			Size: size + 16,
 		},
 	}
