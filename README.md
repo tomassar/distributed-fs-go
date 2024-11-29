@@ -14,7 +14,7 @@ This project implements a distributed file storage system using Go. It utilizes 
 - Understanding and implementing peer-to-peer communication in Go.
 - Working with encryption and decryption for secure data transfer.
 - Managing file storage and retrieval across multiple nodes.
-- Utilizing context for managing request-specific data across functions.
+- Utilizing context for managing request-specific data across functions
 ## TODO
 
 - Create a graphical/command line interface to use the file storage system
