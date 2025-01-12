@@ -17,4 +17,4 @@ This project implements a distributed file storage system using Go. It utilizes 
 - Utilizing context for managing request-specific data across functions
 ## TODO
 
-- Create a graphical/command line interface to use the file storage system
+- Create a graphical/command line interface to use the file storage system.
