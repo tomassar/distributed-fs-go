@@ -4,7 +4,7 @@ This project implements a distributed file storage system using Go. It utilizes 
 ## Features
 - TCP connection between Peers in the P2P network
 - Store and hash files locally and remotely
-- Secure data transfer using encryption.
+- Secure data transfer using encryption
 - Server to handle file storage and broadcast them
 - Gossip protocol
 - Encryption/Decryption
